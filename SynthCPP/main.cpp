@@ -1,89 +1,8 @@
 #include <iostream>
 #include "noise.h"
+#include "instrument.h"
+instrument *voice = nullptr;
 
-class ADSREnvelope
-{
-private:
-	double
-		attackTime,
-		decayTime,
-		releaseTime,
-		sustainAmplitude,
-		startAmplitude,
-		triggerOn,
-		triggerOff;
-	bool
-		notePressed;
-public:
-	ADSREnvelope()
-	{
-		attackTime = 0.05; //10ms
-		decayTime = 0.15;
-		startAmplitude = 1.0;
-		sustainAmplitude = 0.8;
-		releaseTime = 0.05;
-		triggerOn = 0.0;
-		triggerOff = 0.0;
-		notePressed = false;
-	}
-
-	double GetAmplitude(double time)
-	{
-		double Amplitude = 0.0;
-		double currTime = time - triggerOn;
-
-		if (notePressed) //ADS
-		{
-			// Attack
-			if (currTime <= attackTime)
-				Amplitude = (currTime / attackTime) * startAmplitude;
-			// Decay
-			if (currTime > attackTime && currTime <= (attackTime + decayTime))
-				Amplitude = ((currTime - attackTime) / decayTime) * (sustainAmplitude - startAmplitude) + startAmplitude;
-			// Sustain
-			if (currTime > (attackTime + decayTime))
-				Amplitude = sustainAmplitude;
-		}
-		else //R
-		{
-			// Release
-			Amplitude = ((time - triggerOff) / releaseTime) * (0.0 - sustainAmplitude) + sustainAmplitude;
-		}
-
-		if (Amplitude <= 0.0001)
-		{
-			Amplitude = 0.00;
-		}
-
-		return Amplitude;
-	}
-
-	void noteOn(double time)
-	{
-		triggerOn = time;
-		notePressed = true;
-	}
-
-	void noteOff(double time)
-	{
-		triggerOff = time;
-		notePressed = false;
-	}
-};
-
-unsigned int
-	smplrt{ SAMPLERATE },
-	chnl{ CHANNELS },
-	blck{ BLOCKS },
-	blcksmp{ BLOCKSAMPLES };
-// Get sound devices
-std::vector<std::wstring> devices{ noiseMaker<short>::DEVICES() };
-std::wstring
-	dev{ devices[0] };
-double
-	OctaveBase{ 440.0 }, //A440
-	KeyEdit{ pow(2.0, 1.0 / 12.0) };
-std::atomic<double> FREQUENCY = 0.0;
 ADSREnvelope envelope;
 
 void CURR_SETUP()
@@ -97,43 +16,10 @@ void CURR_SETUP()
 		<< "Bit Samples: " << blcksmp << '\n';
 }
 
-double htv(double hertz)
-{
-	return hertz * 2 * PI;
-}
-
-double osc(double hertz, double time, int type)
-{
-	double baseSine{ sin(htv(hertz * time)) };
-	switch (type)
-	{
-	case 0: // SINE
-		return baseSine;
-	case 1: // SQUARE
-		return baseSine > 0.0 ? 1.0 : -1.0;
-	case 2: // TRIANGLE
-		return asin(baseSine) * 2.0 / PI;
-	case 3: // SAWTOOTH (slower / analogue)
-	{
-		double output = 0.0;
-		for (double i{ 1.0 }; i < 100.0; i++)
-			output += (sin(i* htv(hertz) * time)) / i;
-		return output * (2.0 / PI);
-	}
-	case 4: // SAWTOOTH (faster / harsh)
-		return (2.0 / PI) * (hertz * PI * fmod(time, 1.0 / hertz) - (PI / 2.0));
-	case 5: // NOISE
-		return 2.0 * ((double)rand() / (double)RAND_MAX) - 1.0;
-	default:
-		return 0;
-	}
-}
-
 double noiz(double time)
 {
-	double output{ envelope.GetAmplitude(time) *  osc(FREQUENCY, time, 3) };
-
-	return 0.3 * output; // Master Volume
+	double output{ voice->sound(time, FREQUENCY) };
+	return Master * output; // Master Volume
 }
 
 int main()
@@ -148,7 +34,6 @@ int main()
 		* bits = new unsigned int[3]{ 8, 16, 32 };
 
 	// User Setup
-
 	CURR_SETUP();
 	std::wcout << "Would you like to manually set up values?\n (y/Y/n/N): ";
 	std::cin >> mChoice;
@@ -157,8 +42,8 @@ int main()
 		do
 		{
 			CURR_SETUP();
-			//Setup
-				//Sound Device
+
+			//Sound Device
 			int devchoice;
 			do
 			{
@@ -206,16 +91,24 @@ int main()
 			std::cin >> happy;
 		} while (happy == 'n' || happy == 'N');
 	}
+
 	// Create synth.
 	noiseMaker<short> sound(dev, smplrt, chnl, blck, blcksmp);
+	voice = new harmonica(); // Instrument to be played
 
 	// Link noise function w/ synth
 	sound.SetUserFunction(noiz);
 	int currKey = -1;
 
+	// Keyboard
 	while (true)
 	{
-		// Keyboard!
+		if (GetAsyncKeyState(VK_ESCAPE))
+		{
+			std::wcout << "Thanks for playing!\n";
+			return 0;
+		}
+
 		bool keyPressed{ false };
 		for (int key{ 0 }; key < 17; key++)
 		{
@@ -226,22 +119,17 @@ int main()
 					if (key != 15 && key != 16)
 					{
 						FREQUENCY = OctaveBase * pow(KeyEdit, key);
-						std::wcout << "Note Pressed: " << FREQUENCY << '\n';
-						envelope.noteOn(sound.GetTime());
+						//std::wcout << "Pressed: " << FREQUENCY << "htz\n";
+						voice->env.noteOn(sound.GetTime());
 					}
 					else
 					{
 						double tmp{ OctaveBase };
-						if (key == 15)
-						{
+						if (key == 15 && OctaveBase != 13.75)
 							tmp = tmp / 2;
-						}
-						else
-						{
+						else if (key == 16 && OctaveBase != 1760)
 							tmp = tmp * 2;
-						}
-						OctaveBase = (double)tmp;
-						//std::cout << "OCTVBS: " << OctaveBase << '\n';
+						OctaveBase = tmp;
 					}
 					currKey = key;
 				}
@@ -253,8 +141,8 @@ int main()
 		{
 			if (currKey != -1)
 			{
-				std::wcout << "Note Released: " << FREQUENCY << '\n';
-				envelope.noteOff(sound.GetTime());
+				//std::wcout << "Released: " << FREQUENCY << '\n';
+				voice->env.noteOff(sound.GetTime());
 				currKey = -1;
 			}
 			keyPressed = false;

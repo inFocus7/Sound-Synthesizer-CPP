@@ -23,5 +23,8 @@
     <ClInclude Include="noise.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="instrument.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

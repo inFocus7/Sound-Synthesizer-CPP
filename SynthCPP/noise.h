@@ -16,6 +16,7 @@ WILL BE MODIFIED WHILE WORKING AND LEARNING ABOUT SOUND IN WINDOWS.
 #include <vector>
 
 const double PI = 2.0 * std::acos(0.0); // acos(0) = pi/2.	
+
 // Defaults
 extern unsigned int
 	SAMPLERATE{ 44100 },
